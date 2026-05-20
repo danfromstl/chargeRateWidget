@@ -16,8 +16,8 @@ MONITORED_VALUE_KEYS = (
     "power_online",
 )
 NO_DATA = ("no-data",)
-CHARGING_ETA_LABEL = "🟢⬆"
-DISCHARGING_ETA_LABEL = "🔴⬇"
+CHARGING_ETA_LABEL = "⬆"
+DISCHARGING_ETA_LABEL = "⬇"
 
 
 def today_log_path():
@@ -75,6 +75,25 @@ def format_value(value, suffix):
     if value is None:
         return "null"
     return f"{value} {suffix}"
+
+
+def format_timestamp(value):
+    if not value:
+        return ""
+
+    for parser in (
+        lambda timestamp: datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S"),
+        datetime.fromisoformat,
+    ):
+        try:
+            timestamp = parser(value)
+            date_part = timestamp.strftime("%Y-%m-%d")
+            time_part = timestamp.strftime("%I:%M:%S %p").lstrip("0")
+            return f"{date_part} {time_part}"
+        except ValueError:
+            continue
+
+    return value
 
 
 def number_or_none(value):
@@ -166,7 +185,17 @@ class ChargeRateOverlay:
             font=("Segoe UI", 10, "bold"),
             anchor="w",
         )
-        self.state_label.pack(side="left", fill="x", expand=True)
+        self.state_label.pack(side="left")
+
+        self.eta_label = tk.Label(
+            header,
+            text="--",
+            bg="#101820",
+            fg="#f8fafc",
+            font=("Segoe UI Emoji", 9, "bold"),
+            anchor="e",
+        )
+        self.eta_label.pack(side="left", fill="x", expand=True, padx=(8, 10))
 
         close_button = tk.Label(
             header,
@@ -188,31 +217,7 @@ class ChargeRateOverlay:
             font=("Segoe UI", 8),
             anchor="w",
         )
-        self.timestamp_label.pack(fill="x", pady=(0, 6))
-
-        eta_row = tk.Frame(self.panel, bg="#101820")
-        eta_row.pack(fill="x", pady=(1, 5))
-
-        eta_name = tk.Label(
-            eta_row,
-            text="ETA",
-            bg="#101820",
-            fg="#cbd5e1",
-            font=("Segoe UI", 9),
-            anchor="w",
-            width=10,
-        )
-        eta_name.pack(side="left")
-
-        self.eta_label = tk.Label(
-            eta_row,
-            text="--",
-            bg="#101820",
-            fg="#f8fafc",
-            font=("Segoe UI Emoji", 9, "bold"),
-            anchor="e",
-        )
-        self.eta_label.pack(side="right", fill="x", expand=True)
+        self.timestamp_label.pack(fill="x", pady=(2, 6))
 
         self.fields = {}
         for key, label in (
@@ -275,7 +280,7 @@ class ChargeRateOverlay:
 
     def _place_bottom_left(self):
         width = 260
-        height = 184
+        height = 158
         margin_x = 18
         margin_bottom = 72
         screen_height = self.root.winfo_screenheight()
@@ -285,7 +290,7 @@ class ChargeRateOverlay:
     def _set_waiting(self):
         self.state_label.config(text="Waiting for data", fg="#f8fafc")
         self.timestamp_label.config(text="No samples yet")
-        self.eta_label.config(text="--")
+        self.eta_label.config(text="--", fg="#f8fafc")
         for field in self.fields.values():
             field.config(text="--")
 
@@ -296,8 +301,8 @@ class ChargeRateOverlay:
 
         if not measurement.get("status_available"):
             self.state_label.config(text="Unavailable", fg="#fca5a5")
-            self.timestamp_label.config(text=measurement.get("timestamp", ""))
-            self.eta_label.config(text="--")
+            self.timestamp_label.config(text=format_timestamp(measurement.get("timestamp")))
+            self.eta_label.config(text="--", fg="#fca5a5")
             for field in self.fields.values():
                 field.config(text="--")
             return
@@ -307,8 +312,11 @@ class ChargeRateOverlay:
             text="Charging" if is_charging else "Discharging",
             fg="#86efac" if is_charging else "#fbbf24",
         )
-        self.timestamp_label.config(text=measurement.get("timestamp", ""))
-        self.eta_label.config(text=calculate_eta(measurement))
+        self.timestamp_label.config(text=format_timestamp(measurement.get("timestamp")))
+        self.eta_label.config(
+            text=calculate_eta(measurement),
+            fg="#86efac" if is_charging else "#fca5a5",
+        )
         self.fields["charge_rate_mW"].config(
             text=format_value(measurement.get("charge_rate_mW"), "mW")
         )

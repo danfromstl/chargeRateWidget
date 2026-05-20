@@ -117,6 +117,10 @@ def convert_csv(path):
 
 def main():
     for csv_path in LEGACY_CSVS:
+        if not csv_path.exists():
+            print(f"Skipped missing CSV: {csv_path}")
+            continue
+
         result = convert_csv(csv_path)
         if result is None:
             print(f"Skipped empty CSV: {csv_path}")
