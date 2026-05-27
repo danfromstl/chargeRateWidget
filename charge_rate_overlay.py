@@ -5,10 +5,21 @@ from pathlib import Path
 import tkinter as tk
 
 
+REPO_ROOT = Path(__file__).resolve().parent
+LOG_DIR = REPO_ROOT / "logs"
+CURRENT_SESSION_PATH = LOG_DIR / "_current_session.json"
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+STALE_AFTER_SECONDS = 10
+
 MONITORED_VALUE_KEYS = (
     "status_available",
     "charge_rate_mW",
     "discharge_rate_mW",
+    "effective_charge_rate_mW",
+    "effective_discharge_rate_mW",
+    "rate_source",
+    "rate_confidence",
+    "rate_window_seconds",
     "remaining_capacity_mWh",
     "full_charged_capacity_mWh",
     "voltage_mV",
@@ -35,15 +46,37 @@ GRAPH_MAX_SAMPLES = 120
 def today_log_path():
     now = datetime.now()
     filename = f"{now.month}-{now.day}-{now.strftime('%y')}_charge_rates.json"
-    return Path(__file__).resolve().parent / "logs" / filename
+    return LOG_DIR / filename
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Small live overlay for charge rate readings.")
-    parser.add_argument("--log-path", type=Path, default=today_log_path())
+    parser.add_argument("--log-path", type=Path)
     parser.add_argument("--session-id", type=int)
+    parser.add_argument(
+        "--follow-current",
+        action="store_true",
+        help="Follow logs/_current_session.json. This is the default when --log-path is omitted.",
+    )
     parser.add_argument("--poll-ms", type=int, default=500)
     return parser.parse_args()
+
+
+def load_current_session_target():
+    try:
+        with CURRENT_SESSION_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+    log_path = data.get("log_path")
+    if not log_path:
+        return None
+
+    path = Path(log_path)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path, data.get("session_id")
 
 
 def _load_session(log_path, session_id):
@@ -115,16 +148,60 @@ def format_timestamp(value):
         return ""
 
     for parser in (
-        lambda t: datetime.strptime(t, "%Y-%m-%d %H:%M:%S"),
+        lambda t: datetime.strptime(t, TIMESTAMP_FORMAT),
         datetime.fromisoformat,
     ):
         try:
             dt = parser(value)
             return f"{dt.strftime('%Y-%m-%d')} {dt.strftime('%I:%M:%S %p').lstrip('0')}"
-        except ValueError:
+        except (TypeError, ValueError):
             continue
 
     return value
+
+
+def parse_timestamp(value):
+    if not value:
+        return None
+
+    for parser in (
+        lambda t: datetime.strptime(t, TIMESTAMP_FORMAT),
+        datetime.fromisoformat,
+    ):
+        try:
+            return parser(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def measurement_age_seconds(measurement):
+    if measurement is None:
+        return None
+    timestamp = parse_timestamp(measurement.get("timestamp"))
+    if timestamp is None:
+        return None
+    return max(0, (datetime.now() - timestamp).total_seconds())
+
+
+def format_age(seconds):
+    if seconds is None:
+        return ""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, sec = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {sec}s" if sec else f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+
+
+def stale_bucket(measurement):
+    age = measurement_age_seconds(measurement)
+    if age is None or age < STALE_AFTER_SECONDS:
+        return 0
+    return int(age // 5)
 
 
 def number_or_none(value):
@@ -151,16 +228,74 @@ def format_duration(hours):
     return f"{minutes_part}m"
 
 
+def active_rate_direction(measurement):
+    charge_rate = number_or_none(measurement.get("charge_rate_mW")) or 0
+    discharge_rate = number_or_none(measurement.get("discharge_rate_mW")) or 0
+    effective_charge = number_or_none(measurement.get("effective_charge_rate_mW")) or 0
+    effective_discharge = number_or_none(measurement.get("effective_discharge_rate_mW")) or 0
+
+    if measurement.get("charging"):
+        return "charge"
+    if measurement.get("power_online") is False:
+        return "discharge"
+    if charge_rate > 0 or effective_charge > 0:
+        return "charge"
+    if discharge_rate > 0 or effective_discharge > 0:
+        return "discharge"
+    return None
+
+
+def rate_for_direction(measurement, direction):
+    raw_key = "charge_rate_mW" if direction == "charge" else "discharge_rate_mW"
+    effective_key = (
+        "effective_charge_rate_mW"
+        if direction == "charge"
+        else "effective_discharge_rate_mW"
+    )
+    raw = number_or_none(measurement.get(raw_key))
+    effective = number_or_none(measurement.get(effective_key))
+    if raw is not None and raw > 0:
+        return raw, False
+    if effective is not None and effective > 0:
+        return effective, measurement.get("rate_source") != "reported"
+    return raw, False
+
+
+def format_rate_field(measurement, raw_key, effective_key):
+    raw = number_or_none(measurement.get(raw_key))
+    effective = number_or_none(measurement.get(effective_key))
+    if raw is not None and raw > 0:
+        return format_value(int(raw), "mW")
+    if (
+        effective is not None
+        and effective > 0
+        and measurement.get("rate_source") == "estimated_capacity_delta"
+    ):
+        return f"~{int(effective)} mW"
+    return format_value(measurement.get(raw_key), "mW")
+
+
+def format_measurement_timestamp(measurement):
+    timestamp = format_timestamp(measurement.get("timestamp"))
+    age = measurement_age_seconds(measurement)
+    if age is not None and age >= STALE_AFTER_SECONDS:
+        return f"{timestamp} ({format_age(age)} old)"
+    return timestamp
+
+
 def calculate_eta(measurement):
     if measurement is None or not measurement.get("status_available"):
         return "--"
 
-    charging = bool(measurement.get("charging"))
+    direction = active_rate_direction(measurement)
+    if direction is None:
+        return "--"
+
+    charging = direction == "charge"
     label = CHARGING_ETA_LABEL if charging else DISCHARGING_ETA_LABEL
     remaining = number_or_none(measurement.get("remaining_capacity_mWh"))
     full_capacity = number_or_none(measurement.get("full_charged_capacity_mWh"))
-    rate_key = "charge_rate_mW" if charging else "discharge_rate_mW"
-    rate = number_or_none(measurement.get(rate_key))
+    rate, estimated = rate_for_direction(measurement, direction)
 
     if remaining is None or full_capacity is None or full_capacity <= 0:
         return f"{label} null"
@@ -169,7 +304,8 @@ def calculate_eta(measurement):
 
     target_capacity = full_capacity if charging else full_capacity * 0.10
     capacity_delta = target_capacity - remaining if charging else remaining - target_capacity
-    return f"{label} {format_duration(capacity_delta / rate)}"
+    prefix = "~" if estimated else ""
+    return f"{label} {prefix}{format_duration(capacity_delta / rate)}"
 
 
 def _nice_y_axis(max_val_mw):
@@ -339,8 +475,8 @@ class ChargeRateGraph:
             )
             return
 
-        charges = [m.get("charge_rate_mW") or 0 for m in valid]
-        discharges = [m.get("discharge_rate_mW") or 0 for m in valid]
+        charges = [rate_for_direction(m, "charge")[0] or 0 for m in valid]
+        discharges = [rate_for_direction(m, "discharge")[0] or 0 for m in valid]
         timestamps = [m.get("timestamp", "") for m in valid]
         n = len(valid)
 
@@ -716,8 +852,12 @@ class ChargeDayView:
 
             relevant = [m for m in ms if bool(m.get("charging")) == is_mostly_charging]
             if relevant:
-                rate_key = "charge_rate_mW" if is_mostly_charging else "discharge_rate_mW"
-                avg_w = sum(m.get(rate_key) or 0 for m in relevant) / len(relevant) / 1000
+                direction = "charge" if is_mostly_charging else "discharge"
+                avg_w = (
+                    sum(rate_for_direction(m, direction)[0] or 0 for m in relevant)
+                    / len(relevant)
+                    / 1000
+                )
                 c.create_text(pl + 232, cy, anchor="w", text=f"~{avg_w:.1f}W",
                              fill=_DIM, font=("Segoe UI", 8))
 
@@ -729,9 +869,12 @@ class ChargeDayView:
 
 
 class ChargeRateOverlay:
-    def __init__(self, log_path, session_id, poll_ms):
-        self.log_path = log_path
-        self.session_id = session_id
+    def __init__(self, log_path, session_id, poll_ms, follow_current=False):
+        self.fixed_log_path = log_path or today_log_path()
+        self.fixed_session_id = session_id
+        self.follow_current = follow_current
+        self.log_path = self.fixed_log_path
+        self.session_id = self.fixed_session_id
         self.poll_ms = poll_ms
         self.previous_values = None
         self.drag_offset_x = 0
@@ -901,6 +1044,29 @@ class ChargeRateOverlay:
         y = max(18, screen_height - height - margin_bottom)
         self.root.geometry(f"{width}x{height}+{margin_x}+{y}")
 
+    def _resolve_target(self):
+        if self.follow_current:
+            target = load_current_session_target()
+            if target is not None:
+                return target
+        return self.fixed_log_path, self.fixed_session_id
+
+    def _set_target(self, log_path, session_id):
+        if log_path == self.log_path and session_id == self.session_id:
+            return
+
+        self.log_path = log_path
+        self.session_id = session_id
+        self.previous_values = None
+
+        if self.graph_window is not None and self.graph_window.is_alive():
+            self.graph_window.log_path = log_path
+            self.graph_window.session_id = session_id
+
+        if self.day_view is not None and self.day_view.is_alive():
+            self.day_view.log_path = log_path
+            self.day_view.current_session_id = session_id
+
     def _toggle_graph(self):
         if self.graph_window is not None and self.graph_window.is_alive():
             self.graph_window.destroy()
@@ -937,27 +1103,52 @@ class ChargeRateOverlay:
 
         if not measurement.get("status_available"):
             self.state_label.config(text="Unavailable", fg="#fca5a5")
-            self.timestamp_label.config(text=format_timestamp(measurement.get("timestamp")))
+            self.timestamp_label.config(text=format_measurement_timestamp(measurement))
             self.eta_label.config(text="--", fg="#fca5a5")
             for field in self.fields.values():
                 field.config(text="--")
             return
 
-        is_charging = bool(measurement.get("charging"))
+        direction = active_rate_direction(measurement)
+        is_charging = direction == "charge"
+        is_stale = (measurement_age_seconds(measurement) or 0) >= STALE_AFTER_SECONDS
+        if direction == "charge":
+            state_text = "Charging"
+            state_color = "#86efac"
+        elif direction == "discharge":
+            state_text = "Discharging"
+            state_color = "#fbbf24"
+        elif measurement.get("power_online"):
+            state_text = "Plugged in"
+            state_color = "#f8fafc"
+        else:
+            state_text = "Idle"
+            state_color = "#f8fafc"
+        if is_stale:
+            state_text = f"Last: {state_text}"
+
         self.state_label.config(
-            text="Charging" if is_charging else "Discharging",
-            fg="#86efac" if is_charging else "#fbbf24",
+            text=state_text,
+            fg=state_color,
         )
-        self.timestamp_label.config(text=format_timestamp(measurement.get("timestamp")))
+        self.timestamp_label.config(text=format_measurement_timestamp(measurement))
         self.eta_label.config(
             text=calculate_eta(measurement),
             fg="#86efac" if is_charging else "#fca5a5",
         )
         self.fields["charge_rate_mW"].config(
-            text=format_value(measurement.get("charge_rate_mW"), "mW")
+            text=format_rate_field(
+                measurement,
+                "charge_rate_mW",
+                "effective_charge_rate_mW",
+            )
         )
         self.fields["discharge_rate_mW"].config(
-            text=format_value(measurement.get("discharge_rate_mW"), "mW")
+            text=format_rate_field(
+                measurement,
+                "discharge_rate_mW",
+                "effective_discharge_rate_mW",
+            )
         )
         self.fields["remaining_capacity_mWh"].config(
             text=format_value(measurement.get("remaining_capacity_mWh"), "mWh")
@@ -970,8 +1161,14 @@ class ChargeRateOverlay:
         )
 
     def _refresh(self):
+        self._set_target(*self._resolve_target())
         measurement = read_latest_measurement(self.log_path, self.session_id)
-        current_values = value_fingerprint(measurement)
+        current_values = (
+            str(self.log_path),
+            self.session_id,
+            value_fingerprint(measurement),
+            stale_bucket(measurement),
+        )
         if current_values != self.previous_values:
             self._render(measurement)
             self.previous_values = current_values
@@ -999,7 +1196,13 @@ class ChargeRateOverlay:
 
 def main():
     args = parse_args()
-    overlay = ChargeRateOverlay(args.log_path, args.session_id, args.poll_ms)
+    follow_current = args.follow_current or args.log_path is None
+    overlay = ChargeRateOverlay(
+        args.log_path,
+        args.session_id,
+        args.poll_ms,
+        follow_current=follow_current,
+    )
     overlay.run()
 
 

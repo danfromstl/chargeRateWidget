@@ -2533,7 +2533,7 @@
     {
       "session_id": 2,
       "started_at": "2026-05-20 12:53:30",
-      "ended_at": null,
+      "ended_at": "2026-05-20 12:59:29",
       "interval_seconds": 2,
       "measurements": [
         {
@@ -4307,12 +4307,25 @@
           "power_online": true
         }
       ],
-      "last_updated_at": "2026-05-20 12:59:29"
+      "last_updated_at": "2026-05-20 12:59:29",
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 12:59:29",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 539324.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 3,
       "started_at": "2026-05-20 13:00:21",
-      "ended_at": null,
+      "ended_at": "2026-05-20 13:10:30",
       "interval_seconds": 2,
       "measurements": [
         {
@@ -7326,7 +7339,20 @@
           "power_online": true
         }
       ],
-      "last_updated_at": "2026-05-20 13:10:30"
+      "last_updated_at": "2026-05-20 13:10:30",
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 13:10:30",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 538663.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 4,
@@ -11613,7 +11639,7 @@
     {
       "session_id": 5,
       "started_at": "2026-05-20 13:51:43",
-      "ended_at": null,
+      "ended_at": "2026-05-20 14:03:25",
       "interval_seconds": 2.0,
       "measurements": [
         {
@@ -15734,7 +15760,20 @@
         }
       ],
       "last_updated_at": "2026-05-20 14:03:25",
-      "last_write_error": null
+      "last_write_error": null,
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 14:03:25",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 535488.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 6,
@@ -17549,7 +17588,7 @@
     {
       "session_id": 7,
       "started_at": "2026-05-20 14:08:48",
-      "ended_at": null,
+      "ended_at": "2026-05-20 14:14:18",
       "interval_seconds": 2.0,
       "measurements": [
         {
@@ -19450,12 +19489,25 @@
         }
       ],
       "last_updated_at": "2026-05-20 14:14:18",
-      "last_write_error": null
+      "last_write_error": null,
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 14:14:18",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 534835.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 8,
       "started_at": "2026-05-20 14:15:53",
-      "ended_at": null,
+      "ended_at": "2026-05-20 14:27:47",
       "interval_seconds": 2.0,
       "measurements": [
         {
@@ -23624,12 +23676,25 @@
         }
       ],
       "last_updated_at": "2026-05-20 14:27:47",
-      "last_write_error": null
+      "last_write_error": null,
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 14:27:47",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 534026.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 9,
       "started_at": "2026-05-20 14:31:54",
-      "ended_at": null,
+      "ended_at": "2026-05-20 14:35:53",
       "interval_seconds": 2.0,
       "measurements": [
         {
@@ -25026,12 +25091,25 @@
         }
       ],
       "last_updated_at": "2026-05-20 14:35:53",
-      "last_write_error": null
+      "last_write_error": null,
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 14:35:53",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 533540.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 10,
       "started_at": "2026-05-20 14:40:56",
-      "ended_at": null,
+      "ended_at": "2026-05-20 18:00:25",
       "interval_seconds": 2.0,
       "measurements": [
         {
@@ -46240,12 +46318,25 @@
         }
       ],
       "last_updated_at": "2026-05-20 18:00:25",
-      "last_write_error": null
+      "last_write_error": null,
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 18:00:25",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 521268.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 11,
       "started_at": "2026-05-20 18:00:55",
-      "ended_at": null,
+      "ended_at": "2026-05-20 18:01:02",
       "interval_seconds": 2.0,
       "measurements": [
         {
@@ -46298,12 +46389,25 @@
         }
       ],
       "last_updated_at": "2026-05-20 18:01:02",
-      "last_write_error": null
+      "last_write_error": null,
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-20 18:01:02",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 521231.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     },
     {
       "session_id": 12,
       "started_at": "2026-05-20 18:03:03",
-      "ended_at": null,
+      "ended_at": "2026-05-21 09:52:06",
       "interval_seconds": 2.0,
       "measurements": [
         {
@@ -61560,7 +61664,20 @@
         }
       ],
       "last_updated_at": "2026-05-21 09:52:06",
-      "last_write_error": null
+      "last_write_error": null,
+      "end_reason": "app_downtime",
+      "events": [
+        {
+          "type": "gap",
+          "classification": "app_downtime",
+          "started_at": "2026-05-21 09:52:06",
+          "ended_at": "2026-05-26 18:48:13",
+          "duration_seconds": 464167.322,
+          "sleep_event_at": null,
+          "resume_event_at": null,
+          "power_events": []
+        }
+      ]
     }
   ]
 }
