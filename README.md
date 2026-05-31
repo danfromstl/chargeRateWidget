@@ -22,13 +22,14 @@ Every interval measurement is written to JSON, even when the console does not pr
 - Python packages:
   - `wmi`
   - `pywin32`
+  - `psycopg[binary]` for the optional Postgres warehouse sidecars
 
 Setup:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install wmi pywin32
+pip install wmi pywin32 "psycopg[binary]"
 ```
 
 ## Quick Start
@@ -244,6 +245,105 @@ When a gap is detected, the sampler queries the Windows System event log for sle
 
 If the app was closed and restarted on the same day without a detected sleep/wake boundary, it resumes the previous open session and records an `app_downtime` event instead of incrementing the session number.
 
+## Postgres Warehouse V1
+
+The historical warehouse is an optional sidecar pipeline. It does not change the widget's current-day JSON logging behavior.
+
+V1 has two moving parts:
+
+- `historical_chunker.py`: scans JSON logs, keeps a Postgres offset per log/session, and ships 30-second measurement chunks as compressed `json+gzip` event payloads
+- `historical_decoder.py`: reads pending chunk events from Postgres, decodes them, and writes queryable rows to `charge_rate.battery_measurements`
+
+Postgres cannot live inside the Python virtual environment. The venv only holds the Python client library (`psycopg`). Postgres itself still runs as a database server process.
+
+The live warehouse data should not live in this repo. With native Postgres on Windows, the live data files are owned by the `postgresql-x64-16` Windows service under the Postgres install/data directory. Treat those as database internals, not project files.
+
+Use native local Postgres on Windows:
+
+```powershell
+winget install --id PostgreSQL.PostgreSQL.16 --exact
+```
+
+The installer creates a Windows service such as `postgresql-x64-16`. Use the password chosen during install. This local sandbox currently uses `postgres`.
+
+If `psql` is not on PATH, use the full path:
+
+```powershell
+$env:PGPASSWORD = "postgres"
+& "C:\Program Files\PostgreSQL\16\bin\createdb.exe" -h localhost -U postgres charge_rate
+$env:CHARGE_RATE_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/charge_rate"
+```
+
+Initialize the schema:
+
+```powershell
+python .\historical_chunker.py --init-db --once --max-chunks 0
+```
+
+Backfill existing logs into compressed raw chunk events:
+
+```powershell
+python .\historical_chunker.py --once --lag-seconds 0 --quiet
+```
+
+Decode pending raw events into warehouse tables:
+
+```powershell
+python .\historical_decoder.py --once --batch-size 3000 --quiet
+```
+
+Run both sidecars continuously in separate terminals:
+
+```powershell
+python .\historical_chunker.py
+python .\historical_decoder.py
+```
+
+The chunker writes to `charge_rate.raw_event_chunks` and sends a Postgres `NOTIFY charge_rate_chunks` message for each new chunk. The decoder currently polls pending chunks, which keeps V1 simple while preserving a producer/consumer event table.
+
+### Warehouse Backups
+
+Use `pg_dump` snapshots for recoverability. This creates a compact logical backup of the warehouse schema and data without storing database internals in the repo.
+
+Backups default to:
+
+```text
+%LOCALAPPDATA%\chargeRateWidget\warehouse_backups
+```
+
+Create a snapshot manually:
+
+```powershell
+.\backup_warehouse.ps1
+```
+
+Install a Windows Scheduled Task that runs the backup every 6 hours and keeps the latest 28 snapshots:
+
+```powershell
+.\install_warehouse_backup_task.ps1
+```
+
+Restore the latest snapshot into the configured database:
+
+```powershell
+.\restore_warehouse.ps1 -Force
+```
+
+Restore is destructive for the target database. For a safer test restore, create a temporary database and pass a temporary connection URL.
+
+Useful warehouse checks:
+
+```sql
+select count(*) from charge_rate.raw_event_chunks;
+select count(*) from charge_rate.battery_measurements;
+
+select measured_at, effective_discharge_rate_mw, remaining_capacity_mwh
+from charge_rate.battery_measurements
+where power_online = false
+order by measured_at desc
+limit 20;
+```
+
 ## Historical Logs
 
 The old June 2025 CSV/TXT logs were converted into the current JSON shape:
@@ -257,6 +357,14 @@ Those historical entries only contain the fields that were tracked at the time. 
 
 - `charge_rate_widget.py`: WMI sampler, console output, daily JSON writer, optional overlay launcher
 - `charge_rate_overlay.py`: transparent draggable overlay that follows the latest JSON measurement
+- `historical_chunker.py`: optional Postgres sidecar that ships compressed 30-second JSON log chunks
+- `historical_decoder.py`: optional Postgres sidecar that decodes pending chunks into queryable rows
+- `charge_rate_warehouse.py`: shared warehouse helpers
+- `warehouse_schema.sql`: Postgres schema for raw chunks, offsets, sessions, and measurements
+- `backup_warehouse.ps1`: creates a compressed `pg_dump` snapshot outside the repo
+- `restore_warehouse.ps1`: restores a snapshot with `pg_restore`
+- `install_warehouse_backup_task.ps1`: registers a 6-hour Windows backup task
+- `uninstall_warehouse_backup_task.ps1`: removes the Windows backup task
 - `charge_rate_tray.ps1`: tray controller with monitor and overlay actions
 - `start_charge_rate_tray.vbs`: no-console launcher for the tray controller
 - `install_desktop_shortcuts.ps1`: Desktop shortcut installer
